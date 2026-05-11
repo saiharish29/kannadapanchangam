@@ -1,9 +1,9 @@
 # Kannada Panchangam — Amanta System
 
-A single-file, self-hosted Hindu calendar and Muhurta clock for the **Amanta lunar month system** followed in Karnataka, Maharashtra, Andhra Pradesh, and Telangana. Computes tithi, nakshatra, yoga, karana, and muhurta timings live via **Drik Ganita ephemeris** (VSOP87 astronomy). Displays times in both **Bengaluru IST** and **Perth AWST** simultaneously.
+A single-file, self-hosted Hindu calendar and Muhurta clock for the **Amanta lunar month system** followed in Karnataka, Maharashtra, Andhra Pradesh, and Telangana. Computes tithi, nakshatra, yoga, karana, and muhurta timings live from a pluggable astronomical engine — choose between modern **Drik Ganita** (VSOP87 + ELP via astronomy-engine) and traditional **Surya Siddhanta** (yuga-based mean motions with single-epicycle mandaphala). Displays times in both **Bengaluru IST** and **Perth AWST** simultaneously.
 
-**Version:** V3-FINAL (Radial Gauge)
-**File:** `panchang-app.html` (~300 KB, single file, no dependencies)
+**Version:** V4 (Pluggable Engine)
+**File:** `panchang-app.html` (~310 KB, single file, no dependencies)
 
 ---
 
@@ -26,11 +26,33 @@ A single-file, self-hosted Hindu calendar and Muhurta clock for the **Amanta lun
 
 ### 🌙 Astronomical accuracy
 
-- **astronomy-engine 2.1.19** inlined directly (VSOP87 planetary theory)
-- **Lahiri ayanamsha** for sidereal longitudes
+- **Pluggable astronomical engine** — two backends ship with the app, swappable from the header toggle:
+  - **Drik Ganita** (default): `astronomy-engine 2.1.19` inlined (VSOP87 for Sun + ELP-2000 truncation for Moon) with Lahiri (Chitra-paksha) ayanamsha. ~1 arcminute accuracy. Matches drikpanchang.com to within seconds.
+  - **Traditional Karnataka (Surya Siddhanta)**: pure Burgess (1860) yuga constants, single-epicycle *manda* equation of centre, Kali-epoch (JD 588465.5, Ujjain meridian). No external dependency. Bija-correction constants exposed in `PC.SS` for school-specific tuning but ship at zero.
 - **Natural Adhik Masa detection** — two consecutive Amavasyas in the same rashi
 - **Kshaya tithi handling** including masa-boundary cases (Chaitra Shukla Pratipada / Ugadi)
 - **Moonrise / Moonset** for every tithi (within ±30h tolerance to handle late-night rises)
+
+### Computation modes — what changes between them
+
+The tithi formula is the same in both modes:
+
+    tithi_index = floor( ((moon_long - sun_long) mod 360) / 12 )
+
+What differs is the underlying moon and sun longitudes:
+
+- **Drik** integrates the full periodic terms of modern lunar theory (~hundreds of terms in ELP).
+- **Surya Siddhanta** uses one epicycle correction on the mean motion. The two engines therefore disagree by 0–7° in moon longitude on any given day, which translates to tithi-start differences of up to several hours — the well-known and accepted Drik-vs-Saurapaksha gap.
+
+For example, Vaishakha Krishna Dashami on 11 May 2026 at Bengaluru:
+
+| Engine | Krishna Dashami starts (IST) |
+|---|---|
+| Drik Ganita | ~3:24 PM |
+| Pure Burgess Surya Siddhanta (no bija) | ~2:46 AM |
+| (Calibrated school-specific bija) | varies — consult the published panchanga of your tradition |
+
+> **Note on exact matching of any specific publication.** Different Karnataka/Madhwa schools (Uttaradi Math, Sri Rambhapuri Peetham, Brahma-Paksha, etc.) apply different *bija* corrections — small time-linear offsets to the Surya Siddhanta mean motions — from their own epochs (~Saka 444 = 522 CE). This codebase exposes `PC.SS.BIJA_SUN_LONG_DEG`, `PC.SS.BIJA_MOON_LONG_DEG`, and `PC.SS.BIJA_MOON_APOGEE_OFFSET_DEG`, but ships them at zero. *Exact* match to any specific publication requires that publication's authoritative bija constants — please don't single-point-tune them against one date.
 
 ### 🗺️ Dual timezone
 
@@ -96,17 +118,66 @@ panchang-app.html  (~300 KB, ~4150 lines)
 │   └── panel-about      Amanta system explainer
 │
 └── <script>
-    ├── astronomy-engine 2.1.19  (116 KB, inlined VSOP87)
+    ├── astronomy-engine 2.1.19  (116 KB, inlined VSOP87 + ELP)
     ├── PC.*             Panchang computation namespace
+    │   ├── PC.MODES { DRIK, TRADITIONAL_KARNATAKA }
+    │   ├── PC.engines.drik           (Astronomy.SunPosition / EclipticGeoMoon – Lahiri)
+    │   ├── PC.engines.surya_siddhanta (PC.SS.*  yuga maths + mandaphala)
+    │   ├── PC.SS        Burgess SS constants, mean longs, mandaphala, bija
+    │   ├── PC.setMode / PC.activeEngine
+    │   ├── PC.sunLongitude / PC.moonLongitude / PC.moonSunDiff (nirayana, engine-aware)
     │   ├── computeTithi / computeNakshatra / computeYoga / computeKarana
-    │   ├── computeMasa  (with Adhik detection)
-    │   ├── findTithiInYear  (main lookup — kshaya-aware, 3 code paths)
+    │   ├── computeMasa            (with Adhik detection)
+    │   ├── findTithiBoundary      (Drik: SearchMoonPhase  ·  SS: bracket+bisect)
+    │   ├── findTithiInYear        (main lookup — kshaya-aware, 3 code paths)
     │   ├── getSunrise / getSunset / getMoonrise / getMoonset
-    │   ├── buildZones   (muhurta zones per city)
-    │   ├── getZoneSequence  (NOW / NEXT / AFTER)
-    │   └── FESTIVAL_TEMPLATES  (67+ entries)
-    ├── UI rendering     (clock hands tick, gauge update, calendar render)
+    │   ├── buildZones             (muhurta zones per city)
+    │   ├── getZoneSequence        (NOW / NEXT / AFTER)
+    │   ├── FESTIVAL_TEMPLATES     (67+ entries)
+    │   └── tests.run / runTests   (unit + regression suite; ?test=1 to auto-run)
+    ├── UI rendering     (clock hands tick, gauge update, calendar render, mode toggle)
     └── initStars        (decorative background)
+```
+
+### Surya Siddhanta engine — formulas in one place
+
+Source: *Translation of the Surya Siddhanta* by Rev. Ebenezer Burgess, JAOS Vol. 6 (1860).
+
+| Quantity | Value |
+|---|---|
+| Civil days per Mahayuga | 1,577,917,828 |
+| Sun revolutions per Mahayuga | 4,320,000 |
+| Moon revolutions per Mahayuga | 57,753,336 |
+| Moon apogee revolutions (forward) | 488,203 |
+| Moon node revolutions (retrograde) | 232,238 |
+| Sidereal year | 365.25876 days |
+| Sidereal month | 27.32167 days |
+| Sun daily mean motion | 0.98561 °/day |
+| Moon daily mean motion | 13.17636 °/day |
+| Sun manda epicycle | 14° |
+| Moon manda epicycle | 32° |
+| Sun mandocca (apogee) at Kali start | 78° |
+| Kaliyuga epoch (Ujjain mean midnight, JD UT) | 588465.5 |
+| Ujjain longitude | 75°47′ E (75.7833°) |
+
+Ahargana, mean longitude, mandaphala:
+
+    A(t)       = jd_UT(t) + UJJAIN_LON / 360 − KALI_EPOCH_JD
+    L_mean     = 360 * frac( REVS * A / YUGA_DAYS )
+    anomaly    = L_mean − L_apogee
+    mandaphala = − arcsin( (epicycle / 360) * sin(anomaly) )
+    L_true     = L_mean + mandaphala
+
+### Running the test suite
+
+Open the page in a browser and:
+
+    PC.runTests()              // run all suites, log to console, return {passed, failed, results}
+    PC.runTests({verbose:true}) // also log intermediate longitudes
+
+Or visit the page with `?test=1` in the URL to auto-run on load.
+
+The suite covers SS internals (Kali ahargana, mean longitudes, mandaphala range), engine-plumbing sanity at J2000, the 11 May 2026 Bengaluru regression in both modes, mode-invariance (the two engines must disagree on moon-sun elongation), and a Drik regression against the hand-verified `PC.TITHIS` dataset.
 ```
 
 ### Muhurta zones computed
@@ -212,9 +283,10 @@ Personal use. Not affiliated with Anthropic. The inlined astronomy-engine librar
 
 ## Credits
 
-- **astronomy-engine** by Don Cross — VSOP87 implementation used for all astronomical calculations
+- **astronomy-engine** by Don Cross — VSOP87 + ELP implementation used for the Drik engine
+- **Surya Siddhanta** as edited and translated by Rev. Ebenezer Burgess, JAOS Vol. 6 (1860) — yuga constants, epicycle dimensions, and equation-of-centre formula used in the Traditional Karnataka engine
 - **Lahiri ayanamsha** formula per Indian Astronomical Ephemeris (IAE)
-- **Drik Panchang** used as reference for festival date validation (VKD 2021 = 4 Jun 2021 confirmed ✓, VKD 2025 = 22 May 2025 confirmed ✓)
+- **Drik Panchang** used as reference for festival date validation in Drik mode (VKD 2021 = 4 Jun 2021 confirmed ✓, VKD 2025 = 22 May 2025 confirmed ✓)
 - **Google Fonts:** Cinzel, Cormorant Garamond
 
 ---
