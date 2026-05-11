@@ -1880,7 +1880,7 @@ body{
   <div class="footer">
     Kannada Panchangam · Amanta System · Bengaluru IST (UTC+5:30) · Vikrama Samvat 2082<br>
     Tithi timings are indicative. For precision, consult a certified Jyotishi or printed Panchangam.<br>
-    <span style="font-size:.72rem;color:#6A5828">App Version 2.0 · Drik Ganita · ಕನ್ನಡ ಪಂಚಾಂಗ</span>
+    <span style="font-size:.72rem;color:#6A5828">App Version 2.0 · <span id="footerEngineLabel">Drik Ganita</span> · ಕನ್ನಡ ಪಂಚಾಂಗ</span>
   </div>
 
 </div><!-- /page -->
@@ -2236,6 +2236,45 @@ PC.activeEngine = function() { return PC.engines[PC.mode]; };
 ───────────────────────────────────────────── */
 PC.sunLongitude  = function(date) { return PC.activeEngine().sunLongitude(date); };
 PC.moonLongitude = function(date) { return PC.activeEngine().moonLongitude(date); };
+
+/* ─────────────────────────────────────────────
+   Engine display helpers — one source of truth for all the
+   user-facing strings ("✓ DRIK GANITA" pill, loading copy, footer
+   notes etc.). All UI surfaces call these so future mode additions
+   only need updates here.
+───────────────────────────────────────────── */
+PC.engineLabel = function() {
+  return PC.mode === PC.MODES.DRIK
+    ? 'Drik Ganita'
+    : 'Traditional · Surya Siddhanta';
+};
+
+PC.engineShortLabel = function() {
+  return PC.mode === PC.MODES.DRIK ? 'DRIK GANITA' : 'TRADITIONAL SS';
+};
+
+// Colour scheme for the result-card pill — green for Drik (modern,
+// validated against Drik Panchang), gold for Traditional (classical
+// Saurapaksha computation). Distinct colours make the active engine
+// recognisable at a glance.
+PC.engineBadgeStyle = function() {
+  return PC.mode === PC.MODES.DRIK
+    ? { fg: '#6AE888', bgRGBA: '93,222,120,.14', borderRGBA: '93,222,120,.45' }
+    : { fg: '#EDB84A', bgRGBA: '237,184,74,.14',  borderRGBA: '237,184,74,.50' };
+};
+
+// Short blurb appended to result cards / lookup tab notices.
+PC.engineMethodDescription = function() {
+  return PC.mode === PC.MODES.DRIK
+    ? 'astronomical calculation via VSOP87 + ELP ephemeris'
+    : 'Surya Siddhanta yuga-based mean motions with mandaphala (Burgess 1860)';
+};
+
+PC.engineLoadingMethod = function() {
+  return PC.mode === PC.MODES.DRIK
+    ? 'Drik Ganita (VSOP87 + ELP ephemeris)'
+    : 'Surya Siddhanta (yuga-based mean motions)';
+};
 
 PC.moonSunDiff = function(date) {
   const sL = PC.sunLongitude(date);
@@ -3535,7 +3574,7 @@ function renderCal() {
         special:   false,
         festival:  '',
         sig:       PC.SIGNIFICANCE && PC.SIGNIFICANCE[tithi] ? PC.SIGNIFICANCE[tithi] :
-                   'A ' + paksha + ' ' + tithi + ' tithi in ' + masa + ' masa. Computed live via Drik Ganita ephemeris for Bengaluru.',
+                   'A ' + paksha + ' ' + tithi + ' tithi in ' + masa + ' masa. Computed live via ' + PC.engineLabel() + ' for Bengaluru.',
       }];
     }
   }
@@ -3615,7 +3654,7 @@ function renderCal() {
         '</div>' +
         (sig?'<div class="sig-box"><h4>✦ Significance & Observances</h4><p>' + sig + '</p></div>':'') +
         '<div style="font-size:.73rem;color:#6A5828;font-style:italic;margin-top:6px">' +
-          '✦ Amanta · Kannada Panchangam · IST (Bengaluru) + AWST (Perth). All values computed via Drik Ganita ephemeris.' +
+          '✦ Amanta · Kannada Panchangam · IST (Bengaluru) + AWST (Perth). All values computed via ' + PC.engineLabel() + '.' +
         '</div>' +
       '</div>' +
 
@@ -4375,10 +4414,12 @@ function setPanchangaMode(mode) {
     // Update header engine label
     const badge = document.getElementById('hdrEngineBadge');
     if (badge) {
-      badge.textContent = mode === PC.MODES.DRIK
-        ? 'Kannada Panchangam · Drik Ganita'
-        : 'Kannada Panchangam · Traditional (Surya Siddhanta)';
+      badge.textContent = 'Kannada Panchangam · ' + PC.engineLabel();
     }
+
+    // Update footer engine label
+    const footerEng = document.getElementById('footerEngineLabel');
+    if (footerEng) footerEng.textContent = PC.engineLabel();
 
     // Invalidate the live tick's cached panchang so it recomputes immediately
     PC._lastPanchangMinute = null;
@@ -4386,6 +4427,17 @@ function setPanchangaMode(mode) {
 
     // Re-render the full calendar with the new engine
     try { renderCal(); } catch (e) { console.error('renderCal after mode switch:', e); }
+
+    // If the Tithi Lookup tab has results showing, re-run the lookup so the
+    // result cards and badge colour match the new mode. Skip if the form
+    // isn't filled in or no results have been shown yet.
+    try {
+      const resBox = document.getElementById('lookupResults');
+      if (resBox && resBox.querySelector('.result-card')) {
+        // runLookup reads the form fields and re-renders the cards
+        if (typeof runLookup === 'function') runLookup();
+      }
+    } catch (e) { /* ignore */ }
 
     // Force a tick so the clock-tab panchang strip updates right away
     try { tick(); } catch (e) { /* ignore */ }
@@ -4408,9 +4460,9 @@ try {
       b.setAttribute('aria-checked', isActive ? 'true' : 'false');
     });
     const badge = document.getElementById('hdrEngineBadge');
-    if (badge && saved === PC.MODES.TRADITIONAL_KARNATAKA) {
-      badge.textContent = 'Kannada Panchangam · Traditional (Surya Siddhanta)';
-    }
+    if (badge) badge.textContent = 'Kannada Panchangam · ' + PC.engineLabel();
+    const footerEng = document.getElementById('footerEngineLabel');
+    if (footerEng) footerEng.textContent = PC.engineLabel();
   }
 } catch (e) { /* localStorage may be disabled — fine, use default */ }
 
@@ -4625,7 +4677,7 @@ function runLookup() {
   document.getElementById('lookupResults').innerHTML = `
     <div class="lookup-placeholder">
       <span class="lookup-placeholder-icon">🔭</span>
-      Computing tithi positions using Drik Ganita (VSOP87 ephemeris)...<br>
+      Computing tithi positions using ${PC.engineLoadingMethod()}...<br>
       <span style="font-size:.75rem;color:var(--text-3)">This may take a few seconds.</span>
     </div>`;
 
@@ -4637,6 +4689,10 @@ function runLookup() {
     const r1 = PC.findTithiInYear(masa, paksha, tithi, year1);
     const r2 = PC.findTithiInYear(masa, paksha, tithi, year2);
 
+    const footerNote = PC.mode === PC.MODES.DRIK
+      ? 'Accuracy: ~1 arcminute. Match-tested against Drik Panchang for Bengaluru.'
+      : 'Single-epicycle Saurapaksha computation. Exact match to any specific Karnataka publication requires that publication\'s bija — see About tab.';
+
     document.getElementById('lookupResults').innerHTML = `
       <div class="lookup-results">
         ${renderResultCard(r1, year1, masa, paksha, tithi)}
@@ -4645,8 +4701,8 @@ function runLookup() {
       <div style="margin-top:14px;padding:10px 14px;background:var(--surface);
         border:1px solid var(--border-2);border-radius:9px;
         font-size:.72rem;color:var(--text-3);font-style:italic;line-height:1.65;text-align:center">
-        ✦ All values computed live using Drik Ganita (astronomical calculation via VSOP87 ephemeris).
-        Accuracy: ~1 arcminute. Match-tested against Drik Panchang for Bengaluru.
+        ✦ All values computed live using ${PC.engineLabel()} (${PC.engineMethodDescription()}).
+        ${footerNote}
       </div>
     `;
   }, 30);
@@ -4687,13 +4743,14 @@ function renderResultCard(rec, year, masa, paksha, tithi) {
   const weekdayIST = rec.sunriseDate.toLocaleDateString('en-IN',
     {weekday:'long', timeZone:'Asia/Kolkata'});
 
+  const _bs = PC.engineBadgeStyle();
   return `<div class="result-card">
     <div class="result-year-label">◈ Year ${year}</div>
     <div class="result-tithi-name">${title}
       <span style="display:inline-block;margin-left:8px;padding:2px 9px;border-radius:10px;
-        background:rgba(93,222,120,.14);border:1px solid rgba(93,222,120,.45);
-        color:#6AE888;font-size:.58rem;font-family:'Cinzel',serif;letter-spacing:.1em;
-        font-weight:600;vertical-align:middle">✓ DRIK GANITA</span>
+        background:rgba(${_bs.bgRGBA});border:1px solid rgba(${_bs.borderRGBA});
+        color:${_bs.fg};font-size:.58rem;font-family:'Cinzel',serif;letter-spacing:.1em;
+        font-weight:600;vertical-align:middle">✓ ${PC.engineShortLabel()}</span>
     </div>
     <div class="result-greg-date">${fmtISTd(rec.sunriseDate)}</div>
     <div class="result-weekday">${weekdayIST} · computed via ephemeris</div>
