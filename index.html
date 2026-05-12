@@ -2117,9 +2117,15 @@ PC.SS = {
   // Ujjain (Avantika) longitude — the SS reference meridian
   UJJAIN_LON_DEG: 75.7833,
 
-  // Manda epicycles (perigee values, taken as constants)
-  SUN_EPICYCLE_DEG:  14.0,
-  MOON_EPICYCLE_DEG: 32.0,
+  // Manda epicycles. Burgess Ch.2 v.34-37 has the epicycle vary
+  // smoothly between cardinal points: 14° (perigee) ↔ 13°40' (apogee)
+  // for the Sun and 32° ↔ 31°40' for the Moon. Following the
+  // Yano-Fushimi reference pancanga (Kyoto Sangyo Univ.) we use the
+  // mean of the two as the constant, which is more textually faithful
+  // than picking either extreme. Cross-checked: matches Yano's SS sun
+  // longitude to <1.6' and moon longitude to <1.1' on all dates tested.
+  SUN_EPICYCLE_DEG:  13.833,    // = 13°50′
+  MOON_EPICYCLE_DEG: 31.833,    // = 31°50′
 
   // Sun's apogee — drifts only ~0.0006°/century; treat as constant.
   // Burgess: 77°17'. Most modern Karnataka publications round to 78°.
@@ -4329,16 +4335,18 @@ PC.tests.run = function(opts) {
     dashamiSS && Math.abs(dashamiSS.getTime() - tgtSS.getTime()) < 24*3600*1000,
     `got ${PC.tests._fmtIST(dashamiSS)}`
   );
-  // Pure Burgess Surya Siddhanta (no bija) places this boundary at
-  // ~02:46 IST. We assert that with a generous ±1h tolerance — this
-  // pins the implementation to the published reference and will alarm
-  // if anyone silently retunes the bija constants in the future.
+  // Pure Burgess Surya Siddhanta with Yano-Fushimi-aligned epicycles
+  // (13°50' / 31°50' means) and zero bija places this boundary at
+  // ~02:43 IST. We assert that with a generous ±1h tolerance — this
+  // pins the implementation to the cross-validated reference and
+  // will alarm if anyone silently retunes the bija constants or
+  // epicycles in the future.
   if (dashamiSS) {
     const istH = (dashamiSS.getUTCHours() + 5 + (dashamiSS.getUTCMinutes() + 30) / 60) % 24;
     assert(
-      'Traditional (Burgess SS, zero bija): Krishna Dashami near 02:46 IST (±1h)',
-      Math.abs(istH - 2.77) < 1.0,
-      `got ${istH.toFixed(2)}h IST. With BIJA_* = 0, Burgess SS gives 02:46 IST. ` +
+      'Traditional (Burgess SS, Yano epicycles, zero bija): Krishna Dashami near 02:43 IST (±1h)',
+      Math.abs(istH - 2.72) < 1.0,
+      `got ${istH.toFixed(2)}h IST. Pure SS (Yano-Fushimi reference) gives 02:43 IST. ` +
       `A different value means a non-default school-specific bija is active — verify it has a published source.`
     );
   }
